@@ -1,0 +1,61 @@
+#enhance-my-reply-button {
+    align-self: stretch;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.35em;
+    flex: 0 0 auto;
+    min-width: fit-content;
+    padding-inline: 0.65em;
+    white-space: nowrap;
+}
+
+#enhance-my-reply-button.enhance-my-reply--busy > span:first-child {
+    animation: enhance-my-reply-pulse 0.85s ease-in-out infinite alternate;
+}
+
+.enhance-my-reply-settings .inline-drawer-content {
+    display: none;
+    padding: 0.5em 0.25em 1em;
+}
+
+.enhance-my-reply-settings textarea {
+    box-sizing: border-box;
+    display: block;
+    margin: 0.35em 0 0.8em;
+    resize: vertical;
+    width: 100%;
+}
+
+.enhance-my-reply-check {
+    display: flex !important;
+    gap: 0.5em;
+    margin: 0.45em 0;
+}
+
+.enhance-my-reply-check small {
+    display: block;
+    opacity: 0.7;
+}
+
+.enhance-my-reply-note {
+    display: block;
+    margin-top: 0.8em;
+    opacity: 0.75;
+}
+
+@media (max-width: 700px) {
+    #enhance-my-reply-button {
+        min-width: 2.5em;
+        padding-inline: 0.45em;
+    }
+
+    #enhance-my-reply-button .enhance-my-reply-label {
+        display: none;
+    }
+}
+
+@keyframes enhance-my-reply-pulse {
+    from { opacity: 0.4; transform: scale(0.92); }
+    to { opacity: 1; transform: scale(1.08); }
+}

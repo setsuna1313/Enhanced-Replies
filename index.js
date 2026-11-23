@@ -1,4 +1,4 @@
-import { DEFAULT_SETTINGS, buildEnhancementPrompt, migrateSettings, normalizeGeneratedText } from './prompt.js';
+import { DEFAULT_SETTINGS, applyNames, buildEnhancementPrompt, buildRawEnhancement, migrateSettings, normalizeGeneratedText, plainText } from './prompt.js';
 
 const MODULE_NAME = 'enhance_my_reply';
 const CONTEXT_TIMEOUT_MS = 30000;
@@ -62,6 +62,34 @@ async function generate(context, prompt) {
     throw new Error('This SillyTavern version does not expose background generation.');
 }
 
+// generateRaw sends only the prompt and system prompt it is given -- no character card,
+// preset, or chat -- so preset rules cannot override the enhancement task.
+async function generateRawWithSystem(context, prompt, systemPrompt) {
+    const fn = context.generateRaw;
+    if (typeof fn !== 'function') throw new Error('This SillyTavern version does not expose raw generation. Switch Enhance My Reply to Classic mode.');
+    const objectForm = takesOptionsObject(fn);
+    console.debug(`[Enhance My Reply] raw generateRaw: ${objectForm ? 'options object' : 'positional'}`);
+    return objectForm ? fn({ prompt, systemPrompt }) : fn(prompt, null, false, false, systemPrompt);
+}
+
+function buildRawRequest(context, draft, settings) {
+    const user = context.name1 || 'User';
+    const inGroup = Boolean(context.groupId);
+    const chat = (context.chat || []).filter((m) => m && !m.is_system && m.mes);
+    const otherNames = [...new Set(chat.filter((m) => !m.is_user).map((m) => m.name).filter(Boolean))];
+    const charName = inGroup ? (otherNames.join(', ') || context.name2 || 'Character') : (context.name2 || 'Character');
+    const names = { user, char: charName };
+    const expand = (text) => (typeof context.substituteParams === 'function' ? context.substituteParams(String(text || '')) : String(text || ''));
+    const character = !inGroup && context.characters ? context.characters[context.characterId] : null;
+    const history = chat.slice(-12).map((m) => ({ name: m.is_user ? user : (m.name || charName), text: plainText(expand(m.mes)) })).filter((h) => h.text);
+    const { system, user: prompt } = buildRawEnhancement({
+        draft, settings, charName, userName: user, history,
+        charDescription: character ? plainText(expand(character.description)) : '',
+        personaDescription: plainText(expand(context.powerUserSettings?.persona_description)),
+    });
+    return { system: applyNames(system, names), prompt: applyNames(prompt, names) };
+}
+
 function setButtonState(busy) {
     const button = document.querySelector('#enhance-my-reply-button');
     if (!button) return;
@@ -98,18 +126,27 @@ export async function enhanceCurrentReply() {
     enhancing = true;
     setButtonState(true);
     try {
-        // Resolve {{user}}/{{char}} to real names so the model cannot confuse
-        // whose turn it is, then let SillyTavern expand any remaining macros.
-        let enhancementPrompt = buildEnhancementPrompt(draft, getSettings(), {
-            user: context.name1,
-            char: context.name2,
-        });
-        if (typeof context.substituteParams === 'function') {
-            enhancementPrompt = context.substituteParams(enhancementPrompt);
+        const settings = getSettings();
+        let result;
+        if (settings.mode === 'classic') {
+            // Resolve {{user}}/{{char}} to real names so the model cannot confuse
+            // whose turn it is, then let SillyTavern expand any remaining macros.
+            let enhancementPrompt = buildEnhancementPrompt(draft, settings, {
+                user: context.name1,
+                char: context.name2,
+            });
+            if (typeof context.substituteParams === 'function') {
+                enhancementPrompt = context.substituteParams(enhancementPrompt);
+            }
+            // Quiet generation goes through the full preset and character card.
+            result = await generate(context, enhancementPrompt);
+        } else {
+            // Strong presets ("never write {{user}}", mandatory info boards) override a
+            // quiet prompt, so by default send a self-contained request instead.
+            const { system, prompt } = buildRawRequest(context, draft, settings);
+            result = await generateRawWithSystem(context, prompt, system);
         }
-        // Quiet generation includes the active chat/character context. The raw
-        // fallback retains compatibility if an installation omits that helper.
-        const enhanced = normalizeGeneratedText(await generate(context, enhancementPrompt));
+        const enhanced = normalizeGeneratedText(result);
         if (!enhanced) throw new Error('The model returned an empty reply.');
 
         textarea.dataset.enhanceMyReplyOriginal = draft;
@@ -183,13 +220,18 @@ function createSettings() {
         <div class="inline-drawer-content">
             <label for="enhance-my-reply-prompt">Enhancement prompt</label>
             <textarea id="enhance-my-reply-prompt" class="text_pole" rows="7"></textarea>
+            <label for="enhance-my-reply-mode">Prompt builder</label>
+            <select id="enhance-my-reply-mode" class="text_pole">
+                <option value="raw">Raw — enhance prompt + recent chat only</option>
+                <option value="classic">Classic — through your preset</option>
+            </select>
             ${settingRow('enhance-my-reply-markdown', 'Preserve Markdown', 'Keep action markers, emphasis, and paragraph formatting.')}
             ${settingRow('enhance-my-reply-dialogue', 'Preserve dialogue', 'Keep spoken lines and their intended meaning.')}
             ${settingRow('enhance-my-reply-pov', 'First-person, present tense', 'Ask the model to keep “I” narration in the present.')}
             ${settingRow('enhance-my-reply-boundary', 'Never write for {{char}}', 'Keep the bot’s character out of your reply; it answers on its own turn.')}
             ${settingRow('enhance-my-reply-expand', 'Expand short replies from chat context', 'Use recent chat as grounding to develop brief drafts, without continuing the bot’s turn.')}
             ${settingRow('enhance-my-reply-shortcut', 'Enable Ctrl+Shift+E', 'Enhance the current draft from the keyboard. Ctrl+Shift+Z restores it.')}
-            <small class="enhance-my-reply-note">Uses the active chat context plus the currently selected completion API, model, preset, and generation settings. The result replaces your draft but is not sent.</small>
+            <small class="enhance-my-reply-note">Raw sends only the enhancement instructions, short notes on both characters, and the recent chat, so preset rules (info boards, “never write for {{user}}”) can’t take over. Classic sends it through your full preset and character card. Both use the selected API and model. The result replaces your draft but is not sent.</small>
         </div>
     </div>`;
     host.append(panel);
@@ -197,6 +239,7 @@ function createSettings() {
     const settings = getSettings();
     const bindings = {
         'enhance-my-reply-prompt': ['prompt', 'value'],
+        'enhance-my-reply-mode': ['mode', 'value'],
         'enhance-my-reply-markdown': ['preserveMarkdown', 'checked'],
         'enhance-my-reply-dialogue': ['preserveDialogue', 'checked'],
         'enhance-my-reply-pov': ['firstPersonPresent', 'checked'],
@@ -207,7 +250,7 @@ function createSettings() {
     for (const [id, [key, property]] of Object.entries(bindings)) {
         const control = document.getElementById(id);
         control[property] = settings[key];
-        control.addEventListener(property === 'value' ? 'input' : 'change', () => saveSetting(key, control[property]));
+        control.addEventListener(property === 'value' && control.tagName !== 'SELECT' ? 'input' : 'change', () => saveSetting(key, control[property]));
     }
 }
 

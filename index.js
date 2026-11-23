@@ -1,4 +1,4 @@
-import { DEFAULT_SETTINGS, buildEnhancementPrompt, normalizeGeneratedText } from './prompt.js';
+import { DEFAULT_SETTINGS, buildEnhancementPrompt, migrateSettings, normalizeGeneratedText } from './prompt.js';
 
 const MODULE_NAME = 'enhance_my_reply';
 const CONTEXT_TIMEOUT_MS = 30000;
@@ -28,7 +28,7 @@ function getSettings() {
     const context = getContext();
     if (!context) return { ...DEFAULT_SETTINGS };
     const saved = context.extensionSettings[MODULE_NAME];
-    context.extensionSettings[MODULE_NAME] = { ...DEFAULT_SETTINGS, ...(saved || {}) };
+    context.extensionSettings[MODULE_NAME] = migrateSettings(saved);
     return context.extensionSettings[MODULE_NAME];
 }
 
@@ -98,7 +98,15 @@ export async function enhanceCurrentReply() {
     enhancing = true;
     setButtonState(true);
     try {
-        const enhancementPrompt = buildEnhancementPrompt(draft, getSettings());
+        // Resolve {{user}}/{{char}} to real names so the model cannot confuse
+        // whose turn it is, then let SillyTavern expand any remaining macros.
+        let enhancementPrompt = buildEnhancementPrompt(draft, getSettings(), {
+            user: context.name1,
+            char: context.name2,
+        });
+        if (typeof context.substituteParams === 'function') {
+            enhancementPrompt = context.substituteParams(enhancementPrompt);
+        }
         // Quiet generation includes the active chat/character context. The raw
         // fallback retains compatibility if an installation omits that helper.
         const enhanced = normalizeGeneratedText(await generate(context, enhancementPrompt));
@@ -178,8 +186,8 @@ function createSettings() {
             ${settingRow('enhance-my-reply-markdown', 'Preserve Markdown', 'Keep action markers, emphasis, and paragraph formatting.')}
             ${settingRow('enhance-my-reply-dialogue', 'Preserve dialogue', 'Keep spoken lines and their intended meaning.')}
             ${settingRow('enhance-my-reply-pov', 'First-person, present tense', 'Ask the model to keep “I” narration in the present.')}
-            ${settingRow('enhance-my-reply-boundary', 'Do not write for other characters', 'Limit additions to your character’s words and actions.')}
-            ${settingRow('enhance-my-reply-expand', 'Expand short replies from chat context', 'Use the preceding roleplay message to develop brief drafts naturally.')}
+            ${settingRow('enhance-my-reply-boundary', 'Never write for {{char}}', 'Keep the bot’s character out of your reply; it answers on its own turn.')}
+            ${settingRow('enhance-my-reply-expand', 'Expand short replies from chat context', 'Use recent chat as grounding to develop brief drafts, without continuing the bot’s turn.')}
             ${settingRow('enhance-my-reply-shortcut', 'Enable Ctrl+Shift+E', 'Enhance the current draft from the keyboard. Ctrl+Shift+Z restores it.')}
             <small class="enhance-my-reply-note">Uses the active chat context plus the currently selected completion API, model, preset, and generation settings. The result replaces your draft but is not sent.</small>
         </div>

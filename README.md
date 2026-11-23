@@ -25,7 +25,13 @@ Press **Ctrl+Shift+Z** to restore your original draft after an enhancement. The 
 
 ## Settings
 
-Open SillyTavern's Extensions panel and expand **✨ Enhance My Reply**. You can edit the base instruction and independently toggle Markdown preservation, dialogue preservation, first-person/present-tense narration, the boundary against writing for other characters, context-aware expansion of short replies, and the keyboard shortcut.
+Open SillyTavern's Extensions panel and expand **✨ Enhance My Reply**. You can edit the base instruction and independently toggle Markdown preservation, dialogue preservation, first-person/present-tense narration, the boundary against writing for the bot's character ({{char}}), context-aware expansion of short replies, and the keyboard shortcut.
+
+## Point of view
+
+The extension always rewrites the draft as **your** ({{user}}'s) turn. SillyTavern's background generation includes the character card, which tells the model it is {{char}}, so every request starts with an out-of-character note: the model is editing {{user}}'s message, not writing {{char}}'s reply. `{{user}}` and `{{char}}` are replaced with the real names before sending. This note is added even when you write your own prompt.
+
+Updating from 1.2.0 or earlier replaces the old default prompt automatically. A prompt you customized is kept as is.
 
 ## Privacy and behavior
 

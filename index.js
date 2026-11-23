@@ -1,6 +1,7 @@
 import { DEFAULT_SETTINGS, applyNames, buildEnhancementPrompt, buildRawEnhancement, migrateSettings, normalizeGeneratedText, plainText } from './prompt.js';
 
 const MODULE_NAME = 'enhance_my_reply';
+const VERSION = '1.4.1';
 const CONTEXT_TIMEOUT_MS = 30000;
 let enhancing = false;
 let observer = null;
@@ -64,12 +65,33 @@ async function generate(context, prompt) {
 
 // generateRaw sends only the prompt and system prompt it is given -- no character card,
 // preset, or chat -- so preset rules cannot override the enhancement task.
+// SillyTavern adds the preset's Claude "Assistant Prefill" to every chat-completion
+// request, generateRaw included. Roleplay presets often prefill {{char}}'s voice or an
+// info board, which makes Claude continue as the bot whatever the instructions say, so
+// it is switched off for this one request and restored afterwards.
+const PREFILL_KEYS = ['assistant_prefill', 'assistant_impersonation'];
+
 async function generateRawWithSystem(context, prompt, systemPrompt) {
     const fn = context.generateRaw;
     if (typeof fn !== 'function') throw new Error('This SillyTavern version does not expose raw generation. Switch Enhance My Reply to Classic mode.');
     const objectForm = takesOptionsObject(fn);
-    console.debug(`[Enhance My Reply] raw generateRaw: ${objectForm ? 'options object' : 'positional'}`);
-    return objectForm ? fn({ prompt, systemPrompt }) : fn(prompt, null, false, false, systemPrompt);
+    console.info(`[Enhance My Reply ${VERSION}] Raw request via generateRaw (${objectForm ? 'options object' : 'positional'}).`, { systemPrompt, prompt });
+    const cc = context.chatCompletionSettings;
+    const saved = {};
+    if (cc && typeof cc === 'object') {
+        for (const key of PREFILL_KEYS) {
+            if (cc[key]) {
+                saved[key] = cc[key];
+                cc[key] = '';
+            }
+        }
+        if (Object.keys(saved).length) console.info(`[Enhance My Reply ${VERSION}] Preset prefill switched off for this request:`, saved);
+    }
+    try {
+        return await (objectForm ? fn({ prompt, systemPrompt }) : fn(prompt, null, false, false, systemPrompt));
+    } finally {
+        Object.assign(cc || {}, saved);
+    }
 }
 
 function buildRawRequest(context, draft, settings) {

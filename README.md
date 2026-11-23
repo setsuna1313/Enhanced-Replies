@@ -31,6 +31,8 @@ Open SillyTavern's Extensions panel and expand **✨ Enhance My Reply**. You can
 
 The extension always rewrites the draft as **your** ({{user}}'s) turn. SillyTavern's background generation includes the character card, which tells the model it is {{char}}, so every request starts with an out-of-character note: the model is editing {{user}}'s message, not writing {{char}}'s reply. `{{user}}` and `{{char}}` are replaced with the real names before sending. This note is added even when you write your own prompt.
 
+**Prompt builder.** Roleplay presets often include firm rules such as "never write {{user}}" or "every reply must start with an info board." Those rules override a request sent through the preset, so the model refuses or writes {{char}}'s next turn instead. The default **Raw** builder avoids this: it uses `generateRaw` to send only the enhancement instructions, short notes on both characters, and the last 12 messages as plain text (HTML and code stripped). **Classic** sends the request through your full preset and character card, like earlier versions.
+
 Updating from 1.2.0 or earlier replaces the old default prompt automatically. A prompt you customized is kept as is.
 
 ## Privacy and behavior
